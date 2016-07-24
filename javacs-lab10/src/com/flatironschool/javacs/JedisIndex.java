@@ -68,7 +68,8 @@ public class JedisIndex {
 	 */
 	public Set<String> getURLs(String term) {
         // FILL THIS IN!
-		return null;
+		Set<String> urls = jedis.smembers(urlSetKey(term));
+		return urls;
 	}
 
     /**
@@ -79,7 +80,14 @@ public class JedisIndex {
 	 */
 	public Map<String, Integer> getCounts(String term) {
         // FILL THIS IN!
-		return null;
+
+		Map<String, Integer> map = new HashMap<String, Integer>();
+		Set<String> urls = getURLs(term);
+
+		for (String url: urls) {
+			map.put(url, getCount(url, term));
+		}
+		return map;
 	}
 
     /**
@@ -91,7 +99,11 @@ public class JedisIndex {
 	 */
 	public Integer getCount(String url, String term) {
         // FILL THIS IN!
-		return null;
+
+		String redisKey = termCounterKey(url);
+		String count = jedis.hget(redisKey, term);
+		return new Integer(count);
+
 	}
 
 
@@ -103,6 +115,37 @@ public class JedisIndex {
 	 */
 	public void indexPage(String url, Elements paragraphs) {
         // FILL THIS IN!
+
+		System.out.println("indexing");
+
+		TermCounter tc = new TermCounter(url);
+		tc.processElements(paragraphs);
+
+		/*for (String term: tc.keySet()) {
+			Integer count = tc.get(term);
+			jedis.hset(termCounterKey(url), term, count.toString());
+			jedis.sadd(urlSetKey(term), url);
+		}*/
+
+		Transaction t = jedis.multi();
+
+		String aurl = tc.getLabel();
+		String hashname = termCounterKey(aurl);
+
+		// if this page has already been indexed; delete the old hash
+		t.del(hashname);
+
+		// for each term, add an entry in the termcounter and a new
+		// member of the index
+		for (String term: tc.keySet()) {
+			Integer count = tc.get(term);
+			t.hset(hashname, term, count.toString());
+			t.sadd(urlSetKey(term), aurl);
+		}
+		List<Object> res = t.exec();
+		//return res;
+
+		System.out.println("done indexing");
 	}
 
 	/**
@@ -223,9 +266,9 @@ public class JedisIndex {
 		Jedis jedis = JedisMaker.make();
 		JedisIndex index = new JedisIndex(jedis);
 		
-		//index.deleteTermCounters();
-		//index.deleteURLSets();
-		//index.deleteAllKeys();
+		index.deleteTermCounters();
+		index.deleteURLSets();
+		index.deleteAllKeys();
 		loadIndex(index);
 		
 		Map<String, Integer> map = index.getCounts("the");
